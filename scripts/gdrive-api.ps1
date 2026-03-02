@@ -375,6 +375,7 @@ function Sync-GDriveFolder {
         [hashtable]$Manifest = @{},
         [string]$MachineId = '',
         [string]$ManifestBasePath = '',
+        [string[]]$IgnorePatterns = @(),
         [switch]$DryRun,
         [string]$Indent = '  ',
         [switch]$Recursive
@@ -397,7 +398,20 @@ function Sync-GDriveFolder {
     $localMap = @{}
     foreach ($lf in $localFiles) { $localMap[$lf.Name] = $lf }
 
-    $uploaded = 0; $downloaded = 0; $skipped = 0; $conflicts = 0
+    $uploaded = 0; $downloaded = 0; $skipped = 0; $conflicts = 0; $ignored = 0
+
+    # ── Helper: check if file/dir should be ignored ───────────
+    function Test-SyncIgnored($name, $relativePath) {
+        foreach ($pattern in $IgnorePatterns) {
+            # Directory pattern (ends with /)
+            if ($pattern.EndsWith('/') -and $name -eq $pattern.TrimEnd('/')) { return $true }
+            # Glob match on filename
+            if ($name -like $pattern) { return $true }
+            # Glob match on relative path
+            if ($relativePath -and $relativePath -like $pattern) { return $true }
+        }
+        return $false
+    }
 
     # ── Helper: get relative path for manifest key ────────────
     function Get-ManifestKey($filePath) {
@@ -465,6 +479,13 @@ function Sync-GDriveFolder {
     # ── Export: Local → Drive ──────────────────────────────────
     if ($Direction -eq 'export' -or $Direction -eq 'both') {
         foreach ($lf in $localFiles) {
+            # Check syncignore
+            $relPath = Get-ManifestKey $lf.FullName
+            if (Test-SyncIgnored $lf.Name $relPath) {
+                $ignored++
+                continue
+            }
+
             $rf = $remoteMap[$lf.Name]
             $shouldUpload = $false
             $isConflict = $false
@@ -591,6 +612,11 @@ function Sync-GDriveFolder {
         if ($Direction -eq 'export' -or $Direction -eq 'both') {
             foreach ($ld in $localDirs) {
                 if ($ld.Name.StartsWith('.')) { continue }
+                # Check syncignore for directories
+                if (Test-SyncIgnored ($ld.Name + '/') '') { 
+                    $ignored++
+                    continue 
+                }
 
                 $matchingRemote = $remoteFolders | Where-Object { $_.name -eq $ld.Name }
                 $subFolderId = if ($matchingRemote) { $matchingRemote.id } else {
@@ -607,6 +633,7 @@ function Sync-GDriveFolder {
                     $subResult = Sync-GDriveFolder -Token $Token -DriveFolderId $subFolderId -LocalPath $ld.FullName `
                         -Direction $Direction -ConflictStrategy $ConflictStrategy -Manifest $Manifest `
                         -MachineId $MachineId -ManifestBasePath $ManifestBasePath `
+                        -IgnorePatterns $IgnorePatterns `
                         -DryRun:$DryRun -Indent "$Indent  " -Recursive
                     $uploaded += $subResult.Uploaded
                     $downloaded += $subResult.Downloaded
@@ -631,6 +658,7 @@ function Sync-GDriveFolder {
                 $subResult = Sync-GDriveFolder -Token $Token -DriveFolderId $rf.id -LocalPath $localDir `
                     -Direction $Direction -ConflictStrategy $ConflictStrategy -Manifest $Manifest `
                     -MachineId $MachineId -ManifestBasePath $ManifestBasePath `
+                    -IgnorePatterns $IgnorePatterns `
                     -DryRun:$DryRun -Indent "$Indent  " -Recursive
                 $uploaded += $subResult.Uploaded
                 $downloaded += $subResult.Downloaded
@@ -640,5 +668,5 @@ function Sync-GDriveFolder {
         }
     }
 
-    return @{ Uploaded = $uploaded; Downloaded = $downloaded; Skipped = $skipped; Conflicts = $conflicts }
+    return @{ Uploaded = $uploaded; Downloaded = $downloaded; Skipped = $skipped; Conflicts = $conflicts; Ignored = $ignored }
 }

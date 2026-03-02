@@ -34,6 +34,15 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $configPath = Join-Path $scriptDir "..\config.json"
 $antigravityPath = Join-Path $env:USERPROFILE ".gemini\antigravity"
 $manifestPath = Join-Path $scriptDir "..\.sync-manifest.json"
+$syncignorePath = Join-Path $scriptDir "..\.syncignore"
+
+# --- Load .syncignore ---
+$ignorePatterns = @()
+if (Test-Path $syncignorePath) {
+    $ignorePatterns = Get-Content $syncignorePath | Where-Object { $_ -and -not $_.StartsWith('#') } | ForEach-Object { $_.Trim() } | Where-Object { $_ }
+    Write-Host "  📋 Loaded $($ignorePatterns.Count) ignore patterns from .syncignore" -ForegroundColor DarkGray
+}
+
 
 # --- Load Config ---
 if (-not (Test-Path $configPath)) {
@@ -86,7 +95,7 @@ if ($syncMode -eq 'api') {
     $token = Get-GDriveToken -RefreshToken $gd.refresh_token
     Write-Host "  ✅ Token ready" -ForegroundColor Green
 
-    $totalUp = 0; $totalDown = 0; $totalSkip = 0; $totalConflict = 0
+    $totalUp = 0; $totalDown = 0; $totalSkip = 0; $totalConflict = 0; $totalIgnored = 0
 
     foreach ($t in $targets) {
         $localDir = Join-Path $antigravityPath $t
@@ -105,11 +114,13 @@ if ($syncMode -eq 'api') {
             -LocalPath $localDir -Direction $Direction `
             -ConflictStrategy $ConflictStrategy -Manifest $manifest `
             -MachineId $machineId -ManifestBasePath $antigravityPath `
+            -IgnorePatterns $ignorePatterns `
             -DryRun:$DryRun -Recursive
         $totalUp += $result.Uploaded
         $totalDown += $result.Downloaded
         $totalSkip += $result.Skipped
         $totalConflict += $result.Conflicts
+        $totalIgnored += $result.Ignored
     }
 
     # Save manifest
@@ -127,7 +138,7 @@ if ($syncMode -eq 'api') {
 
     Write-Host "`n$("=" * 50)" -ForegroundColor Cyan
     Write-Host "✅ Sync complete!" -ForegroundColor Green
-    Write-Host "   ⬆️ Uploaded: $totalUp | ⬇️ Downloaded: $totalDown | ⏭️ Skipped: $totalSkip" -ForegroundColor White
+    Write-Host "   ⬆️ Uploaded: $totalUp | ⬇️ Downloaded: $totalDown | ⏭️ Skipped: $totalSkip | 🚫 Ignored: $totalIgnored" -ForegroundColor White
     if ($totalConflict -gt 0) {
         Write-Host "   ⚠️  Conflicts: $totalConflict (strategy: $ConflictStrategy)" -ForegroundColor Magenta
     }
