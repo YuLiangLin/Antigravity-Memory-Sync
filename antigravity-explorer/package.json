@@ -1,9 +1,10 @@
 {
     "name": "antigravity-explorer",
-    "displayName": "Antigravity Explorer",
-    "description": "Visual explorer for Antigravity AI coding assistant — browse skills, brain conversations, knowledge items, and sync memory across machines.",
-    "version": "0.1.0",
+    "displayName": "%extension.displayName%",
+    "description": "%extension.description%",
+    "version": "0.3.0",
     "publisher": "NathanLin",
+    "icon": "media/icon.png",
     "engines": {
         "vscode": "^1.85.0"
     },
@@ -23,12 +24,13 @@
         "onStartupFinished"
     ],
     "main": "./out/extension.js",
+    "l10n": "./l10n",
     "contributes": {
         "viewsContainers": {
             "activitybar": [
                 {
                     "id": "antigravity-explorer",
-                    "title": "Antigravity Explorer",
+                    "title": "%viewsContainer.title%",
                     "icon": "media/icon.svg"
                 }
             ]
@@ -37,42 +39,52 @@
             "antigravity-explorer": [
                 {
                     "id": "antigravity-skills",
-                    "name": "Skills"
+                    "name": "%view.skills%"
                 },
                 {
                     "id": "antigravity-brain",
-                    "name": "Brain"
+                    "name": "%view.brain%"
                 },
                 {
                     "id": "antigravity-sync",
-                    "name": "Sync"
+                    "name": "%view.sync%"
                 }
             ]
         },
         "commands": [
             {
                 "command": "antigravity.openDashboard",
-                "title": "Antigravity: Open Dashboard",
+                "title": "%command.openDashboard%",
                 "icon": "$(dashboard)"
             },
             {
                 "command": "antigravity.syncMemory",
-                "title": "Antigravity: Sync Memory",
+                "title": "%command.syncMemory%",
                 "icon": "$(sync)"
             },
             {
                 "command": "antigravity.exportMemory",
-                "title": "Antigravity: Export to Cloud",
+                "title": "%command.exportMemory%",
                 "icon": "$(cloud-upload)"
             },
             {
                 "command": "antigravity.importMemory",
-                "title": "Antigravity: Import from Cloud",
+                "title": "%command.importMemory%",
                 "icon": "$(cloud-download)"
             },
             {
+                "command": "antigravity.openBrainDashboard",
+                "title": "%command.openBrainDashboard%",
+                "icon": "$(graph)"
+            },
+            {
+                "command": "antigravity.distillBrain",
+                "title": "%command.distillBrain%",
+                "icon": "$(beaker)"
+            },
+            {
                 "command": "antigravity.refresh",
-                "title": "Antigravity: Refresh",
+                "title": "%command.refresh%",
                 "icon": "$(refresh)"
             }
         ],
@@ -87,8 +99,28 @@
                     "command": "antigravity.openDashboard",
                     "when": "view == antigravity-skills",
                     "group": "navigation"
+                },
+                {
+                    "command": "antigravity.openBrainDashboard",
+                    "when": "view == antigravity-brain",
+                    "group": "navigation"
+                },
+                {
+                    "command": "antigravity.distillBrain",
+                    "when": "view == antigravity-brain",
+                    "group": "navigation"
                 }
             ]
+        },
+        "configuration": {
+            "title": "Antigravity Explorer",
+            "properties": {
+                "antigravity.geminiApiKey": {
+                    "type": "string",
+                    "default": "",
+                    "markdownDescription": "%config.geminiApiKey%"
+                }
+            }
         }
     },
     "scripts": {

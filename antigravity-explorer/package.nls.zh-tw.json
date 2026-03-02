@@ -1,0 +1,16 @@
+{
+    "extension.displayName": "Antigravity 探索器",
+    "extension.description": "Antigravity AI 程式助手的視覺化瀏覽器 — 瀏覽技能、大腦對話、知識庫，並跨機器同步記憶。",
+    "viewsContainer.title": "Antigravity 探索器",
+    "view.skills": "技能",
+    "view.brain": "大腦",
+    "view.sync": "同步",
+    "command.openDashboard": "Antigravity: 開啟儀表板",
+    "command.openBrainDashboard": "Antigravity: 大腦儀表板",
+    "command.syncMemory": "Antigravity: 同步記憶",
+    "command.exportMemory": "Antigravity: 匯出至雲端",
+    "command.importMemory": "Antigravity: 從雲端匯入",
+    "command.refresh": "Antigravity: 重新整理",
+    "command.distillBrain": "Antigravity: 粹練大腦",
+    "config.geminiApiKey": "用於大腦粹練的 Gemini API Key。請從 [Google AI Studio](https://aistudio.google.com/apikey) 取得。"
+}

@@ -9,6 +9,8 @@
     'both' (default), 'import' (cloud→local), 'export' (local→cloud)
 .PARAMETER Target
     Specific target to sync: 'brain', 'knowledge', 'skills', or 'all'
+.PARAMETER ConflictStrategy
+    'newer-wins' (default) or 'keep-both'
 .PARAMETER DryRun
     Preview changes without applying.
 .EXAMPLE
@@ -22,6 +24,8 @@ param(
     [string]$Direction = 'both',
     [ValidateSet('all', 'brain', 'knowledge', 'skills')]
     [string]$Target = 'all',
+    [ValidateSet('newer-wins', 'keep-both')]
+    [string]$ConflictStrategy = 'newer-wins',
     [switch]$DryRun
 )
 
@@ -29,6 +33,7 @@ $ErrorActionPreference = "Stop"
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $configPath = Join-Path $scriptDir "..\config.json"
 $antigravityPath = Join-Path $env:USERPROFILE ".gemini\antigravity"
+$manifestPath = Join-Path $scriptDir "..\.sync-manifest.json"
 
 # --- Load Config ---
 if (-not (Test-Path $configPath)) {
@@ -37,11 +42,32 @@ if (-not (Test-Path $configPath)) {
 }
 $config = Get-Content $configPath -Raw | ConvertFrom-Json
 
+# --- Machine ID ---
+if (-not $config.machine_id) {
+    $config | Add-Member -NotePropertyName 'machine_id' -NotePropertyValue ([guid]::NewGuid().ToString().Substring(0, 8)) -Force
+    $config | ConvertTo-Json -Depth 4 | Set-Content -Path $configPath -Encoding UTF8
+    Write-Host "  🆔 Machine ID assigned: $($config.machine_id)" -ForegroundColor DarkCyan
+}
+$machineId = $config.machine_id
+
+# --- Load Manifest ---
+$manifest = @{}
+if (Test-Path $manifestPath) {
+    try {
+        $manifestData = Get-Content $manifestPath -Raw | ConvertFrom-Json
+        foreach ($prop in $manifestData.files.PSObject.Properties) {
+            $manifest[$prop.Name] = $prop.Value
+        }
+    }
+    catch { $manifest = @{} }
+}
+
 $targets = if ($Target -eq 'all') { $config.sync_targets } else { @($Target) }
 $syncMode = if ($config.sync_mode) { $config.sync_mode } elseif ($config.use_symlinks) { 'symlink' } else { 'manual' }
 
 Write-Host "`n🔄 Antigravity Memory Sync" -ForegroundColor Cyan
 Write-Host "   Mode: $syncMode | Direction: $Direction | Targets: $($targets -join ', ')" -ForegroundColor Gray
+Write-Host "   Machine: $machineId | Conflict: $ConflictStrategy" -ForegroundColor DarkGray
 
 # =================================================================
 # API MODE
@@ -60,7 +86,7 @@ if ($syncMode -eq 'api') {
     $token = Get-GDriveToken -RefreshToken $gd.refresh_token
     Write-Host "  ✅ Token ready" -ForegroundColor Green
 
-    $totalUp = 0; $totalDown = 0; $totalSkip = 0
+    $totalUp = 0; $totalDown = 0; $totalSkip = 0; $totalConflict = 0
 
     foreach ($t in $targets) {
         $localDir = Join-Path $antigravityPath $t
@@ -76,24 +102,39 @@ if ($syncMode -eq 'api') {
 
         Write-Host "`n  📂 $t/" -ForegroundColor White
         $result = Sync-GDriveFolder -Token $token -DriveFolderId $folderId `
-            -LocalPath $localDir -Direction $Direction -DryRun:$DryRun -Recursive
+            -LocalPath $localDir -Direction $Direction `
+            -ConflictStrategy $ConflictStrategy -Manifest $manifest `
+            -MachineId $machineId -ManifestBasePath $antigravityPath `
+            -DryRun:$DryRun -Recursive
         $totalUp += $result.Uploaded
         $totalDown += $result.Downloaded
         $totalSkip += $result.Skipped
+        $totalConflict += $result.Conflicts
     }
 
-    # Update last_sync in config
+    # Save manifest
     if (-not $DryRun) {
-        $config.google_drive.last_sync = (Get-Date).ToUniversalTime().ToString('o')
+        $manifestObj = @{
+            machine_id = $machineId
+            last_sync  = (Get-Date).ToUniversalTime().ToString('o')
+            files      = $manifest
+        }
+        $manifestObj | ConvertTo-Json -Depth 4 | Set-Content -Path $manifestPath -Encoding UTF8
+
+        $config.google_drive.last_sync = $manifestObj.last_sync
         $config | ConvertTo-Json -Depth 4 | Set-Content -Path $configPath -Encoding UTF8
     }
 
     Write-Host "`n$("=" * 50)" -ForegroundColor Cyan
     Write-Host "✅ Sync complete!" -ForegroundColor Green
     Write-Host "   ⬆️ Uploaded: $totalUp | ⬇️ Downloaded: $totalDown | ⏭️ Skipped: $totalSkip" -ForegroundColor White
+    if ($totalConflict -gt 0) {
+        Write-Host "   ⚠️  Conflicts: $totalConflict (strategy: $ConflictStrategy)" -ForegroundColor Magenta
+    }
     if ($DryRun) { Write-Host "   ⚠️  DRY RUN — no changes made." -ForegroundColor Yellow }
     exit 0
 }
+
 
 # =================================================================
 # SYMLINK / MANUAL MODE

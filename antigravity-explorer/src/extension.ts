@@ -3,6 +3,8 @@ import { SkillsTreeProvider } from './providers/skillsTreeProvider';
 import { BrainTreeProvider } from './providers/brainTreeProvider';
 import { SyncTreeProvider } from './providers/syncTreeProvider';
 import { DashboardPanel } from './webview/dashboard';
+import { createBrainDashboard } from './webview/brainDashboard';
+import { distillBrain } from './commands/distillCommand';
 import { runSyncCommand } from './commands/syncCommands';
 
 export function activate(context: vscode.ExtensionContext) {
@@ -11,7 +13,7 @@ export function activate(context: vscode.ExtensionContext) {
     const antigravityPath = getAntigravityPath();
     if (!antigravityPath) {
         vscode.window.showWarningMessage(
-            'Antigravity directory not found. Expected at ~/.gemini/antigravity/'
+            vscode.l10n.t('Antigravity directory not found. Expected at ~/.gemini/antigravity/')
         );
         return;
     }
@@ -31,7 +33,7 @@ export function activate(context: vscode.ExtensionContext) {
             skillsProvider.refresh();
             brainProvider.refresh();
             syncProvider.refresh();
-            vscode.window.showInformationMessage('Antigravity Explorer refreshed');
+            vscode.window.showInformationMessage(vscode.l10n.t('Antigravity Explorer refreshed'));
         }),
 
         vscode.commands.registerCommand('antigravity.openDashboard', () => {
@@ -52,6 +54,14 @@ export function activate(context: vscode.ExtensionContext) {
 
         vscode.commands.registerCommand('antigravity.openFile', (uri: vscode.Uri) => {
             vscode.window.showTextDocument(uri);
+        }),
+
+        vscode.commands.registerCommand('antigravity.openBrainDashboard', () => {
+            createBrainDashboard(context, antigravityPath);
+        }),
+
+        vscode.commands.registerCommand('antigravity.distillBrain', () => {
+            distillBrain(context, antigravityPath);
         })
     );
 }

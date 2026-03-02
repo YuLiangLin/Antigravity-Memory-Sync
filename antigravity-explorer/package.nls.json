@@ -1,0 +1,16 @@
+{
+    "extension.displayName": "Antigravity Explorer",
+    "extension.description": "Visual explorer for Antigravity AI coding assistant — browse skills, brain conversations, knowledge items, and sync memory across machines.",
+    "viewsContainer.title": "Antigravity Explorer",
+    "view.skills": "Skills",
+    "view.brain": "Brain",
+    "view.sync": "Sync",
+    "command.openDashboard": "Antigravity: Open Dashboard",
+    "command.openBrainDashboard": "Antigravity: Brain Dashboard",
+    "command.syncMemory": "Antigravity: Sync Memory",
+    "command.exportMemory": "Antigravity: Export to Cloud",
+    "command.importMemory": "Antigravity: Import from Cloud",
+    "command.refresh": "Antigravity: Refresh",
+    "command.distillBrain": "Antigravity: Distill Brain",
+    "config.geminiApiKey": "Gemini API Key for Brain distillation. Get yours from [Google AI Studio](https://aistudio.google.com/apikey)."
+}

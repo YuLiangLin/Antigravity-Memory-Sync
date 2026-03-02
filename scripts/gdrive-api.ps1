@@ -327,11 +327,14 @@ function Remove-GDriveFile {
 function Sync-GDriveFolder {
     <#
     .SYNOPSIS
-        Bidirectional sync between a local folder and a Google Drive folder.
-    .PARAMETER Direction
-        'export' = local → Drive, 'import' = Drive → local, 'both' = bidirectional
-    .PARAMETER DryRun
-        Preview changes without applying.
+        Bidirectional sync with conflict detection between local and Google Drive.
+    .PARAMETER ConflictStrategy
+        'newer-wins' (default) = keep newer, backup older as .conflict
+        'keep-both' = keep both versions with .conflict suffix
+    .PARAMETER Manifest
+        Hashtable of file hashes from last sync for conflict detection.
+    .PARAMETER MachineId
+        Unique machine identifier for conflict backup filenames.
     #>
     param(
         [string]$Token,
@@ -339,6 +342,11 @@ function Sync-GDriveFolder {
         [string]$LocalPath,
         [ValidateSet('export', 'import', 'both')]
         [string]$Direction = 'both',
+        [ValidateSet('newer-wins', 'keep-both')]
+        [string]$ConflictStrategy = 'newer-wins',
+        [hashtable]$Manifest = @{},
+        [string]$MachineId = '',
+        [string]$ManifestBasePath = '',
         [switch]$DryRun,
         [string]$Indent = '  ',
         [switch]$Recursive
@@ -346,13 +354,12 @@ function Sync-GDriveFolder {
 
     if (-not (Test-Path $LocalPath)) { New-Item -ItemType Directory -Path $LocalPath -Force | Out-Null }
 
-    # Get remote files and folders
+    # Get remote and local files
     $remoteFiles = Get-GDriveFileList -Token $Token -FolderId $DriveFolderId
     $remoteFolders = Get-GDriveFolderList -Token $Token -FolderId $DriveFolderId
     if (-not $remoteFiles) { $remoteFiles = @() }
     if (-not $remoteFolders) { $remoteFolders = @() }
 
-    # Get local files
     $localFiles = Get-ChildItem -Path $LocalPath -File -ErrorAction SilentlyContinue
     if (-not $localFiles) { $localFiles = @() }
 
@@ -362,33 +369,119 @@ function Sync-GDriveFolder {
     $localMap = @{}
     foreach ($lf in $localFiles) { $localMap[$lf.Name] = $lf }
 
-    $uploaded = 0; $downloaded = 0; $skipped = 0
+    $uploaded = 0; $downloaded = 0; $skipped = 0; $conflicts = 0
+
+    # ── Helper: get relative path for manifest key ────────────
+    function Get-ManifestKey($filePath) {
+        if ($ManifestBasePath) {
+            return $filePath.Replace($ManifestBasePath, '').TrimStart('\', '/').Replace('\', '/')
+        }
+        return (Split-Path -Leaf $filePath)
+    }
+
+    # ── Helper: detect conflict ───────────────────────────────
+    function Test-Conflict($localFile, $remoteFile) {
+        if (-not $localFile -or -not $remoteFile) { return $false }
+
+        $key = Get-ManifestKey $localFile.FullName
+        $lastHash = $Manifest[$key]
+
+        if (-not $lastHash) { return $false }  # No previous sync record
+
+        # Compute current local hash
+        $localHash = (Get-FileHash -Path $localFile.FullName -Algorithm SHA256).Hash
+
+        # If local unchanged since last sync, no conflict
+        if ($localHash -eq $lastHash) { return $false }
+
+        # Local changed AND remote is also newer → CONFLICT
+        $remoteTime = [datetime]::Parse($remoteFile.modifiedTime)
+        $localTime = $localFile.LastWriteTimeUtc
+        $timeDiff = [Math]::Abs(($localTime - $remoteTime.ToUniversalTime()).TotalSeconds)
+
+        # Both modified (local hash differs from last sync, and remote time differs significantly)
+        return ($timeDiff -gt 5)
+    }
+
+    # ── Helper: handle conflict ───────────────────────────────
+    function Resolve-Conflict($localFile, $remoteFile, $action) {
+        $timestamp = (Get-Date).ToString('yyyyMMdd-HHmmss')
+        $suffix = ".conflict.$MachineId.$timestamp"
+        $logPath = Join-Path (Split-Path $LocalPath) "sync-conflicts.log"
+
+        if ($ConflictStrategy -eq 'keep-both') {
+            # Keep both versions
+            if ($action -eq 'upload') {
+                $backupName = "$($localFile.Name)$suffix"
+                $backupPath = Join-Path $LocalPath $backupName
+                Copy-Item $localFile.FullName $backupPath -Force
+                Write-Host "$Indent  ⚠️  Conflict (keep-both): $($localFile.Name)" -ForegroundColor Magenta
+            }
+        }
+        else {
+            # newer-wins: backup the loser
+            $remoteTime = [datetime]::Parse($remoteFile.modifiedTime).ToUniversalTime()
+            $localTime = $localFile.LastWriteTimeUtc
+
+            if ($action -eq 'download' -and $localTime -gt [datetime]::MinValue) {
+                # Remote wins, backup local
+                $backupPath = Join-Path $LocalPath "$($localFile.Name)$suffix"
+                Copy-Item $localFile.FullName $backupPath -Force
+                Write-Host "$Indent  ⚠️  Conflict: $($localFile.Name) — 保留較新版，本地備份為 $($localFile.Name)$suffix" -ForegroundColor Magenta
+            }
+        }
+
+        # Log conflict
+        $logEntry = "[$(Get-Date -Format 'o')] CONFLICT: $($localFile.Name) | Machine: $MachineId | Strategy: $ConflictStrategy"
+        Add-Content -Path $logPath -Value $logEntry -ErrorAction SilentlyContinue
+        $script:conflictCount++
+    }
+
+    $script:conflictCount = 0
 
     # ── Export: Local → Drive ──────────────────────────────────
     if ($Direction -eq 'export' -or $Direction -eq 'both') {
         foreach ($lf in $localFiles) {
             $rf = $remoteMap[$lf.Name]
             $shouldUpload = $false
+            $isConflict = $false
 
             if (-not $rf) {
-                $shouldUpload = $true  # New file
+                $shouldUpload = $true
             }
             else {
-                $remoteTime = [datetime]::Parse($rf.modifiedTime)
-                if ($lf.LastWriteTimeUtc -gt $remoteTime.ToUniversalTime().AddSeconds(5)) {
-                    $shouldUpload = $true  # Local is newer
+                # Check for conflict first
+                if ($Direction -eq 'both' -and (Test-Conflict $lf $rf)) {
+                    $isConflict = $true
+                    $remoteTime = [datetime]::Parse($rf.modifiedTime).ToUniversalTime()
+                    if ($lf.LastWriteTimeUtc -gt $remoteTime) {
+                        $shouldUpload = $true  # Local is newer, upload wins
+                    }
+                }
+                else {
+                    $remoteTime = [datetime]::Parse($rf.modifiedTime)
+                    if ($lf.LastWriteTimeUtc -gt $remoteTime.ToUniversalTime().AddSeconds(5)) {
+                        $shouldUpload = $true
+                    }
                 }
             }
 
             if ($shouldUpload) {
                 if ($DryRun) {
-                    Write-Host "$Indent  ⬆️  [DRY] Upload: $($lf.Name)" -ForegroundColor Yellow
+                    $conflictTag = if ($isConflict) { " ⚠️CONFLICT" } else { "" }
+                    Write-Host "$Indent  ⬆️  [DRY] Upload: $($lf.Name)$conflictTag" -ForegroundColor Yellow
                 }
                 else {
+                    if ($isConflict) { Resolve-Conflict $lf $rf 'upload' }
                     Write-Host "$Indent  ⬆️  Upload: $($lf.Name)" -ForegroundColor Cyan
                     Send-GDriveFile -Token $Token -FolderId $DriveFolderId -LocalPath $lf.FullName
                 }
                 $uploaded++
+                if ($isConflict) { $conflicts++ }
+
+                # Update manifest
+                $key = Get-ManifestKey $lf.FullName
+                $Manifest[$key] = (Get-FileHash -Path $lf.FullName -Algorithm SHA256).Hash
             }
             else {
                 $skipped++
@@ -401,30 +494,56 @@ function Sync-GDriveFolder {
         foreach ($rf in $remoteFiles) {
             $lf = $localMap[$rf.name]
             $shouldDownload = $false
+            $isConflict = $false
 
             if (-not $lf) {
-                $shouldDownload = $true  # New file from cloud
+                $shouldDownload = $true
             }
             else {
-                $remoteTime = [datetime]::Parse($rf.modifiedTime)
-                if ($remoteTime.ToUniversalTime() -gt $lf.LastWriteTimeUtc.AddSeconds(5)) {
-                    $shouldDownload = $true  # Remote is newer
+                if ($Direction -eq 'both' -and (Test-Conflict $lf $rf)) {
+                    $isConflict = $true
+                    $remoteTime = [datetime]::Parse($rf.modifiedTime).ToUniversalTime()
+                    if ($remoteTime -gt $lf.LastWriteTimeUtc) {
+                        $shouldDownload = $true  # Remote is newer
+                    }
+                }
+                else {
+                    $remoteTime = [datetime]::Parse($rf.modifiedTime)
+                    if ($remoteTime.ToUniversalTime() -gt $lf.LastWriteTimeUtc.AddSeconds(5)) {
+                        $shouldDownload = $true
+                    }
                 }
             }
 
             if ($shouldDownload) {
                 $destPath = Join-Path $LocalPath $rf.name
                 if ($DryRun) {
-                    Write-Host "$Indent  ⬇️  [DRY] Download: $($rf.name)" -ForegroundColor Yellow
+                    $conflictTag = if ($isConflict) { " ⚠️CONFLICT" } else { "" }
+                    Write-Host "$Indent  ⬇️  [DRY] Download: $($rf.name)$conflictTag" -ForegroundColor Yellow
                 }
                 else {
+                    if ($isConflict -and $lf) { Resolve-Conflict $lf $rf 'download' }
                     Write-Host "$Indent  ⬇️  Download: $($rf.name)" -ForegroundColor Cyan
                     Receive-GDriveFile -Token $Token -FileId $rf.id -LocalPath $destPath
                 }
                 $downloaded++
+                if ($isConflict) { $conflicts++ }
+
+                # Update manifest after download
+                if (-not $DryRun -and (Test-Path $destPath)) {
+                    $key = Get-ManifestKey $destPath
+                    $Manifest[$key] = (Get-FileHash -Path $destPath -Algorithm SHA256).Hash
+                }
             }
             else {
                 $skipped++
+                # Still update manifest hash for unchanged files
+                if ($lf) {
+                    $key = Get-ManifestKey $lf.FullName
+                    if (-not $Manifest[$key]) {
+                        $Manifest[$key] = (Get-FileHash -Path $lf.FullName -Algorithm SHA256).Hash
+                    }
+                }
             }
         }
     }
@@ -434,10 +553,8 @@ function Sync-GDriveFolder {
         $localDirs = Get-ChildItem -Path $LocalPath -Directory -ErrorAction SilentlyContinue
         if (-not $localDirs) { $localDirs = @() }
 
-        # Sync local folders → Drive
         if ($Direction -eq 'export' -or $Direction -eq 'both') {
             foreach ($ld in $localDirs) {
-                # Skip hidden/system directories
                 if ($ld.Name.StartsWith('.')) { continue }
 
                 $matchingRemote = $remoteFolders | Where-Object { $_.name -eq $ld.Name }
@@ -452,13 +569,18 @@ function Sync-GDriveFolder {
                 }
                 if ($subFolderId) {
                     Write-Host "$Indent  📂 $($ld.Name)/" -ForegroundColor Gray
-                    Sync-GDriveFolder -Token $Token -DriveFolderId $subFolderId -LocalPath $ld.FullName `
-                        -Direction $Direction -DryRun:$DryRun -Indent "$Indent  " -Recursive
+                    $subResult = Sync-GDriveFolder -Token $Token -DriveFolderId $subFolderId -LocalPath $ld.FullName `
+                        -Direction $Direction -ConflictStrategy $ConflictStrategy -Manifest $Manifest `
+                        -MachineId $MachineId -ManifestBasePath $ManifestBasePath `
+                        -DryRun:$DryRun -Indent "$Indent  " -Recursive
+                    $uploaded += $subResult.Uploaded
+                    $downloaded += $subResult.Downloaded
+                    $skipped += $subResult.Skipped
+                    $conflicts += $subResult.Conflicts
                 }
             }
         }
 
-        # Sync Drive folders → Local
         if ($Direction -eq 'import' -or $Direction -eq 'both') {
             foreach ($rf in $remoteFolders) {
                 $localDir = Join-Path $LocalPath $rf.name
@@ -471,11 +593,17 @@ function Sync-GDriveFolder {
                     }
                 }
                 Write-Host "$Indent  📂 $($rf.name)/" -ForegroundColor Gray
-                Sync-GDriveFolder -Token $Token -DriveFolderId $rf.id -LocalPath $localDir `
-                    -Direction $Direction -DryRun:$DryRun -Indent "$Indent  " -Recursive
+                $subResult = Sync-GDriveFolder -Token $Token -DriveFolderId $rf.id -LocalPath $localDir `
+                    -Direction $Direction -ConflictStrategy $ConflictStrategy -Manifest $Manifest `
+                    -MachineId $MachineId -ManifestBasePath $ManifestBasePath `
+                    -DryRun:$DryRun -Indent "$Indent  " -Recursive
+                $uploaded += $subResult.Uploaded
+                $downloaded += $subResult.Downloaded
+                $skipped += $subResult.Skipped
+                $conflicts += $subResult.Conflicts
             }
         }
     }
 
-    return @{ Uploaded = $uploaded; Downloaded = $downloaded; Skipped = $skipped }
+    return @{ Uploaded = $uploaded; Downloaded = $downloaded; Skipped = $skipped; Conflicts = $conflicts }
 }
