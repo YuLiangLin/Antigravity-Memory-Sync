@@ -1,0 +1,110 @@
+{
+    "name": "antigravity-explorer",
+    "displayName": "Antigravity Explorer",
+    "description": "Visual explorer for Antigravity AI coding assistant — browse skills, brain conversations, knowledge items, and sync memory across machines.",
+    "version": "0.1.0",
+    "publisher": "antigravity-tools",
+    "engines": {
+        "vscode": "^1.85.0"
+    },
+    "categories": [
+        "Other",
+        "Visualization"
+    ],
+    "keywords": [
+        "antigravity",
+        "gemini",
+        "ai",
+        "skills",
+        "memory",
+        "sync"
+    ],
+    "activationEvents": [
+        "onStartupFinished"
+    ],
+    "main": "./out/extension.js",
+    "contributes": {
+        "viewsContainers": {
+            "activitybar": [
+                {
+                    "id": "antigravity-explorer",
+                    "title": "Antigravity Explorer",
+                    "icon": "media/icon.svg"
+                }
+            ]
+        },
+        "views": {
+            "antigravity-explorer": [
+                {
+                    "id": "antigravity-skills",
+                    "name": "Skills"
+                },
+                {
+                    "id": "antigravity-brain",
+                    "name": "Brain"
+                },
+                {
+                    "id": "antigravity-sync",
+                    "name": "Sync"
+                }
+            ]
+        },
+        "commands": [
+            {
+                "command": "antigravity.openDashboard",
+                "title": "Antigravity: Open Dashboard",
+                "icon": "$(dashboard)"
+            },
+            {
+                "command": "antigravity.syncMemory",
+                "title": "Antigravity: Sync Memory",
+                "icon": "$(sync)"
+            },
+            {
+                "command": "antigravity.exportMemory",
+                "title": "Antigravity: Export to Cloud",
+                "icon": "$(cloud-upload)"
+            },
+            {
+                "command": "antigravity.importMemory",
+                "title": "Antigravity: Import from Cloud",
+                "icon": "$(cloud-download)"
+            },
+            {
+                "command": "antigravity.refresh",
+                "title": "Antigravity: Refresh",
+                "icon": "$(refresh)"
+            }
+        ],
+        "menus": {
+            "view/title": [
+                {
+                    "command": "antigravity.refresh",
+                    "when": "view =~ /^antigravity-/",
+                    "group": "navigation"
+                },
+                {
+                    "command": "antigravity.openDashboard",
+                    "when": "view == antigravity-skills",
+                    "group": "navigation"
+                }
+            ]
+        }
+    },
+    "scripts": {
+        "vscode:prepublish": "npm run compile",
+        "compile": "tsc -p ./",
+        "watch": "tsc -watch -p ./",
+        "lint": "eslint src --ext ts",
+        "package": "npx @vscode/vsce package"
+    },
+    "devDependencies": {
+        "@types/node": "^20.11.0",
+        "@types/vscode": "^1.85.0",
+        "@vscode/vsce": "^2.22.0",
+        "typescript": "^5.3.0"
+    },
+    "dependencies": {
+        "gray-matter": "^4.0.3"
+    }
+}

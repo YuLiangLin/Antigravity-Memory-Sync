@@ -1,0 +1,18 @@
+# Dependencies
+node_modules/
+out/
+
+# Build artifacts
+*.vsix
+
+# Config (contains tokens)
+config.json
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Other projects (not part of this repo)
+DiCon-Web-Instrument-Suite/
+DiConProject-Antigravity-Skills/
+PMM-WebService/
