@@ -2,7 +2,7 @@
     "name": "antigravity-explorer",
     "displayName": "%extension.displayName%",
     "description": "%extension.description%",
-    "version": "0.4.0",
+    "version": "0.5.0",
     "publisher": "NathanLin",
     "icon": "media/icon.png",
     "engines": {
@@ -119,6 +119,30 @@
                     "type": "string",
                     "default": "",
                     "markdownDescription": "%config.geminiApiKey%"
+                },
+                "antigravity.autoSync": {
+                    "type": "boolean",
+                    "default": true,
+                    "markdownDescription": "%config.autoSync%"
+                },
+                "antigravity.autoSyncInterval": {
+                    "type": "number",
+                    "default": 30,
+                    "minimum": 5,
+                    "maximum": 1440,
+                    "markdownDescription": "%config.autoSyncInterval%"
+                },
+                "antigravity.autoDistill": {
+                    "type": "boolean",
+                    "default": true,
+                    "markdownDescription": "%config.autoDistill%"
+                },
+                "antigravity.autoDistillThreshold": {
+                    "type": "number",
+                    "default": 5,
+                    "minimum": 1,
+                    "maximum": 50,
+                    "markdownDescription": "%config.autoDistillThreshold%"
                 }
             }
         }

@@ -6,6 +6,7 @@ import { DashboardPanel } from './webview/dashboard';
 import { createBrainDashboard } from './webview/brainDashboard';
 import { distillBrain } from './commands/distillCommand';
 import { runSyncCommand } from './commands/syncCommands';
+import { startAutoScheduler, stopAutoScheduler } from './autoScheduler';
 
 export function activate(context: vscode.ExtensionContext) {
     console.log('Antigravity Explorer is now active');
@@ -64,9 +65,14 @@ export function activate(context: vscode.ExtensionContext) {
             distillBrain(context, antigravityPath);
         })
     );
+
+    // Start background auto-sync & distill scheduler
+    startAutoScheduler(context, antigravityPath);
 }
 
-export function deactivate() { }
+export function deactivate() {
+    stopAutoScheduler();
+}
 
 function getAntigravityPath(): string | undefined {
     const home = process.env.USERPROFILE || process.env.HOME || '';

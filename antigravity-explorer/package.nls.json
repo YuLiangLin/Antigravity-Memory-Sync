@@ -12,5 +12,9 @@
     "command.importMemory": "Antigravity: Import from Cloud",
     "command.refresh": "Antigravity: Refresh",
     "command.distillBrain": "Antigravity: Distill Brain",
-    "config.geminiApiKey": "Gemini API Key for Brain distillation. Get yours from [Google AI Studio](https://aistudio.google.com/apikey)."
+    "config.geminiApiKey": "Gemini API Key for Brain distillation. Get yours from [Google AI Studio](https://aistudio.google.com/apikey).",
+    "config.autoSync": "Enable automatic background sync (default: on)",
+    "config.autoSyncInterval": "Auto-sync interval in minutes (default: 30, min: 5)",
+    "config.autoDistill": "Suggest distillation when reaching milestone conversations (default: on)",
+    "config.autoDistillThreshold": "Number of completed conversations to trigger distillation suggestion (default: 5)"
 }
