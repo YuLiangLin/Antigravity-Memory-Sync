@@ -251,26 +251,54 @@ function Get-GDriveFolderList {
     return $resp.files
 }
 
+function Get-GDriveAllItems {
+    <#
+    .SYNOPSIS  List ALL items (files + folders) in a single API call. Returns @{ Files; Folders }.
+    #>
+    param(
+        [string]$Token,
+        [string]$FolderId
+    )
+    $q = [uri]::EscapeDataString("'$FolderId' in parents and trashed=false")
+    $url = "$($script:DRIVE_API)/files?q=$q&fields=files(id,name,modifiedTime,size,mimeType)&pageSize=1000"
+    $headers = @{ Authorization = "Bearer $Token" }
+    $resp = Invoke-RestMethod -Uri $url -Headers $headers
+    $all = if ($resp.files) { $resp.files } else { @() }
+    $folderMime = 'application/vnd.google-apps.folder'
+    return @{
+        Files   = @($all | Where-Object { $_.mimeType -ne $folderMime })
+        Folders = @($all | Where-Object { $_.mimeType -eq $folderMime })
+    }
+}
+
 function Send-GDriveFile {
     <#
     .SYNOPSIS  Upload or update a single file to Google Drive.
+    .PARAMETER ExistingFileId
+        If provided, skip the existence check and directly update this file. Saves 1 API call.
     #>
     param(
         [string]$Token,
         [string]$FolderId,
-        [string]$LocalPath
+        [string]$LocalPath,
+        [string]$ExistingFileId = ''
     )
     $fileName = Split-Path -Leaf $LocalPath
     $fileBytes = [System.IO.File]::ReadAllBytes($LocalPath)
     $headers = @{ Authorization = "Bearer $Token" }
 
-    # Check if file already exists
-    $q = [uri]::EscapeDataString("name='$fileName' and '$FolderId' in parents and trashed=false")
-    $existing = Invoke-RestMethod -Uri "$($script:DRIVE_API)/files?q=$q&fields=files(id)&pageSize=1" -Headers $headers
+    # Determine file ID (skip query if already known)
+    $fileId = $ExistingFileId
+    if (-not $fileId) {
+        $q = [uri]::EscapeDataString("name='$fileName' and '$FolderId' in parents and trashed=false")
+        $existing = Invoke-RestMethod -Uri "$($script:DRIVE_API)/files?q=$q&fields=files(id)&pageSize=1" -Headers $headers
+        if ($existing.files -and $existing.files.Count -gt 0) {
+            $fileId = $existing.files[0].id
+        }
+    }
 
-    if ($existing.files -and $existing.files.Count -gt 0) {
+    if ($fileId) {
         # Update existing file
-        $fileId = $existing.files[0].id
         $url = "$($script:UPLOAD_API)/files/${fileId}?uploadType=media"
         Invoke-RestMethod -Uri $url -Method Patch -Headers $headers -Body $fileBytes -ContentType 'application/octet-stream' | Out-Null
     }
@@ -354,10 +382,10 @@ function Sync-GDriveFolder {
 
     if (-not (Test-Path $LocalPath)) { New-Item -ItemType Directory -Path $LocalPath -Force | Out-Null }
 
-    # Get remote and local files
-    $remoteFiles = Get-GDriveFileList -Token $Token -FolderId $DriveFolderId
-    $remoteFolders = Get-GDriveFolderList -Token $Token -FolderId $DriveFolderId
-    if (-not $remoteFiles) { $remoteFiles = @() }
+    # Get remote items in a SINGLE API call (optimization: 1 call instead of 2)
+    $remoteItems = Get-GDriveAllItems -Token $Token -FolderId $DriveFolderId
+    $remoteFiles = $remoteItems.Files
+    $remoteFolders = $remoteItems.Folders
     if (-not $remoteFolders) { $remoteFolders = @() }
 
     $localFiles = Get-ChildItem -Path $LocalPath -File -ErrorAction SilentlyContinue
@@ -379,27 +407,22 @@ function Sync-GDriveFolder {
         return (Split-Path -Leaf $filePath)
     }
 
-    # ── Helper: detect conflict ───────────────────────────────
+    # ── Helper: detect conflict (uses manifest to avoid unnecessary hash) ──
     function Test-Conflict($localFile, $remoteFile) {
         if (-not $localFile -or -not $remoteFile) { return $false }
 
         $key = Get-ManifestKey $localFile.FullName
         $lastHash = $Manifest[$key]
 
-        if (-not $lastHash) { return $false }  # No previous sync record
+        if (-not $lastHash) { return $false }
 
-        # Compute current local hash
+        # Compute local hash only when needed (lazy)
         $localHash = (Get-FileHash -Path $localFile.FullName -Algorithm SHA256).Hash
+        if ($localHash -eq $lastHash) { return $false }  # Unchanged
 
-        # If local unchanged since last sync, no conflict
-        if ($localHash -eq $lastHash) { return $false }
-
-        # Local changed AND remote is also newer → CONFLICT
+        # Local changed — check if remote also changed
         $remoteTime = [datetime]::Parse($remoteFile.modifiedTime)
-        $localTime = $localFile.LastWriteTimeUtc
-        $timeDiff = [Math]::Abs(($localTime - $remoteTime.ToUniversalTime()).TotalSeconds)
-
-        # Both modified (local hash differs from last sync, and remote time differs significantly)
+        $timeDiff = [Math]::Abs(($localFile.LastWriteTimeUtc - $remoteTime.ToUniversalTime()).TotalSeconds)
         return ($timeDiff -gt 5)
     }
 
@@ -455,10 +478,20 @@ function Sync-GDriveFolder {
                     $isConflict = $true
                     $remoteTime = [datetime]::Parse($rf.modifiedTime).ToUniversalTime()
                     if ($lf.LastWriteTimeUtc -gt $remoteTime) {
-                        $shouldUpload = $true  # Local is newer, upload wins
+                        $shouldUpload = $true
                     }
                 }
                 else {
+                    # Quick skip: if manifest hash matches, file unchanged — skip entirely
+                    $key = Get-ManifestKey $lf.FullName
+                    $lastHash = $Manifest[$key]
+                    if ($lastHash) {
+                        $currentHash = (Get-FileHash -Path $lf.FullName -Algorithm SHA256).Hash
+                        if ($currentHash -eq $lastHash) {
+                            $skipped++
+                            continue  # Fast path: no change since last sync
+                        }
+                    }
                     $remoteTime = [datetime]::Parse($rf.modifiedTime)
                     if ($lf.LastWriteTimeUtc -gt $remoteTime.ToUniversalTime().AddSeconds(5)) {
                         $shouldUpload = $true
@@ -474,7 +507,9 @@ function Sync-GDriveFolder {
                 else {
                     if ($isConflict) { Resolve-Conflict $lf $rf 'upload' }
                     Write-Host "$Indent  ⬆️  Upload: $($lf.Name)" -ForegroundColor Cyan
-                    Send-GDriveFile -Token $Token -FolderId $DriveFolderId -LocalPath $lf.FullName
+                    # Pass existing file ID to avoid redundant existence query
+                    $existingId = if ($rf) { $rf.id } else { '' }
+                    Send-GDriveFile -Token $Token -FolderId $DriveFolderId -LocalPath $lf.FullName -ExistingFileId $existingId
                 }
                 $uploaded++
                 if ($isConflict) { $conflicts++ }
