@@ -44,7 +44,7 @@ function Write-Dry($msg) { Write-Host "  🧪 [DRY-RUN] $msg" -ForegroundColor M
 $antigravityPath = Join-Path $env:USERPROFILE ".gemini\antigravity"
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $configPath = Join-Path $scriptDir "..\config.json"
-$targets = @("brain", "knowledge", "skills", "distilled")
+$targets = @("brain", "knowledge", "skills")
 
 if (-not (Test-Path $antigravityPath)) {
     Write-Host "❌ Antigravity directory not found at: $antigravityPath" -ForegroundColor Red

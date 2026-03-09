@@ -92,6 +92,8 @@ function updateStatusBar(status: 'idle' | 'syncing' | 'done' | 'error') {
     statusBarItem.show();
 }
 
+let consecutiveFailures = 0;
+
 function runBackgroundSync(
     context: vscode.ExtensionContext,
     antigravityPath: string,
@@ -99,6 +101,13 @@ function runBackgroundSync(
 ) {
     const scriptPath = path.join(antigravityPath, 'skills', 'memory-sync', 'scripts', 'sync.ps1');
     if (!fs.existsSync(scriptPath)) { return; }
+
+    // Check if config exists (skip sync if not configured — avoids useless pwsh process)
+    const configPath = path.join(antigravityPath, 'skills', 'memory-sync', 'config.json');
+    if (!fs.existsSync(configPath)) {
+        console.log('Antigravity: Skipping background sync — no config.json (run Setup first)');
+        return;
+    }
 
     updateStatusBar('syncing');
 
@@ -122,10 +131,27 @@ function runBackgroundSync(
             updateStatusBar('done');
             state.lastSyncTime = Date.now();
             context.globalState.update(STATE_KEY, state);
+            consecutiveFailures = 0;
             console.log('Antigravity: Background sync completed');
         } else {
             updateStatusBar('error');
-            console.error(`Antigravity: Sync failed (code ${code})\n${output.substring(0, 200)}`);
+            consecutiveFailures++;
+            console.error(`Antigravity: Sync failed (code ${code}, attempt ${consecutiveFailures})\n${output.substring(0, 300)}`);
+
+            // After 3 consecutive failures, notify user
+            if (consecutiveFailures === 3) {
+                vscode.window.showWarningMessage(
+                    vscode.l10n.t('Antigravity sync has failed 3 times. Check your network or re-run Setup.'),
+                    'Run Setup',
+                    'Retry Now'
+                ).then(choice => {
+                    if (choice === 'Run Setup') {
+                        vscode.commands.executeCommand('antigravity.setupSync');
+                    } else if (choice === 'Retry Now') {
+                        vscode.commands.executeCommand('antigravity.syncMemory');
+                    }
+                });
+            }
         }
     });
 }

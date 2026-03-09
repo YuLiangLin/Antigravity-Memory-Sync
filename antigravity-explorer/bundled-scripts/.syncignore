@@ -1,0 +1,30 @@
+# ─── Antigravity Memory Sync — Ignore Rules ──────────────────
+# Files matching these patterns will be SKIPPED during sync.
+# Uses glob-style patterns. One pattern per line. Lines starting with # are comments.
+
+# ── Browser screenshots & recordings (auto-generated, ~130MB) ──
+*.webp
+media__*.png
+current_project_*.png
+gcp_*.png
+gcp_*.webp
+google_drive_*.png
+oauth_*.png
+project_created_*.png
+uploaded_media_*.png
+github_actions_*.png
+github_actions_*.webp
+
+# ── System-generated logs (can be regenerated) ──
+.system_generated/
+
+# ── VS Code temp files ──
+*.code-workspace
+
+# ── Conflict backups (local only) ──
+*.conflict.*
+
+# ── Build artifacts ──
+*.vsix
+node_modules/
+out/

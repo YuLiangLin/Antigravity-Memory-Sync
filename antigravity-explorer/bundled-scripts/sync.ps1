@@ -8,7 +8,7 @@
 .PARAMETER Direction
     'both' (default), 'import' (cloud→local), 'export' (local→cloud)
 .PARAMETER Target
-    Specific target to sync: 'brain', 'knowledge', 'skills', 'distilled', or 'all'
+    Specific target to sync: 'brain', 'knowledge', 'skills', or 'all'
 .PARAMETER ConflictStrategy
     'newer-wins' (default) or 'keep-both'
 .PARAMETER DryRun
@@ -22,7 +22,7 @@
 param(
     [ValidateSet('both', 'import', 'export')]
     [string]$Direction = 'both',
-    [ValidateSet('all', 'brain', 'knowledge', 'skills', 'distilled')]
+    [ValidateSet('all', 'brain', 'knowledge', 'skills')]
     [string]$Target = 'all',
     [ValidateSet('newer-wins', 'keep-both')]
     [string]$ConflictStrategy = 'newer-wins',
@@ -104,7 +104,6 @@ if ($syncMode -eq 'api') {
         if (-not $folderId) {
             Write-Host "  📁 Creating Drive folder for '$t'..." -ForegroundColor Cyan
             try {
-                . (Join-Path $scriptDir "gdrive-api.ps1")
                 $rootId = $gd.root_folder_id
                 $folderId = Get-OrCreateFolder -Token $token -ParentId $rootId -PathParts @($t)
                 # Persist the new folder ID to config

@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
+import { diagnoseSyncSetup, SyncDiagnosis } from '../commands/setupCommand';
 
 export class SyncTreeProvider implements vscode.TreeDataProvider<SyncItem> {
     private _onDidChangeTreeData = new vscode.EventEmitter<SyncItem | undefined>();
@@ -17,33 +18,43 @@ export class SyncTreeProvider implements vscode.TreeDataProvider<SyncItem> {
     }
 
     getChildren(): SyncItem[] {
-        const config = this.loadConfig();
         const items: SyncItem[] = [];
+        const diagnosis = diagnoseSyncSetup(this.antigravityPath);
 
-        if (!config) {
+        if (diagnosis.message !== 'Ready') {
+            // Show specific diagnostic with actionable icon
             items.push(new SyncItem(
-                '⚠️ Not configured',
-                'Run setup.ps1 -Mode api',
-                'warning'
+                `⚠️ ${diagnosis.message}`,
+                'Click to setup',
+                'warning',
+                'antigravity.setupSync'
             ));
         } else {
-            // Mode
-            const mode = config.sync_mode || 'symlink';
-            items.push(new SyncItem(
-                `Mode: ${mode}`,
-                mode === 'api' ? 'Google Drive API' : 'Symlink / Manual',
-                'cloud'
-            ));
-
-            // Last sync time
-            if (config.google_drive?.last_sync) {
-                const lastSync = new Date(config.google_drive.last_sync);
-                const ago = this.timeAgo(lastSync);
+            // Load config for details
+            const config = this.loadConfig(diagnosis.configPath);
+            if (config) {
+                const mode = config.sync_mode || 'symlink';
                 items.push(new SyncItem(
-                    `Last sync: ${ago}`,
-                    lastSync.toLocaleString(),
-                    'history'
+                    `Mode: ${mode}`,
+                    mode === 'api' ? 'Google Drive API' : 'Symlink / Manual',
+                    'cloud'
                 ));
+
+                if (config.google_drive?.last_sync) {
+                    const lastSync = new Date(config.google_drive.last_sync);
+                    const ago = this.timeAgo(lastSync);
+                    items.push(new SyncItem(
+                        `Last sync: ${ago}`,
+                        lastSync.toLocaleString(),
+                        'history'
+                    ));
+                } else {
+                    items.push(new SyncItem(
+                        'Never synced',
+                        'Run sync to start',
+                        'info'
+                    ));
+                }
             }
         }
 
@@ -55,15 +66,18 @@ export class SyncTreeProvider implements vscode.TreeDataProvider<SyncItem> {
         return items;
     }
 
-    private loadConfig(): any {
+    private loadConfig(configPath?: string): any {
+        // If we already have the path from diagnosis, use it directly
+        if (configPath && fs.existsSync(configPath)) {
+            try { return JSON.parse(fs.readFileSync(configPath, 'utf-8')); }
+            catch { /* fall through */ }
+        }
+
+        // Fallback search
         const configPaths = [
-            // Installed skill location
             path.join(this.antigravityPath, 'skills', 'memory-sync', 'config.json'),
-            // Direct project paths
-            path.join(this.antigravityPath, 'skills', 'memory-sync', '..', '..', '..', 'config.json'),
         ];
 
-        // Also search workspace folders
         const workspaceFolders = vscode.workspace.workspaceFolders;
         if (workspaceFolders) {
             for (const folder of workspaceFolders) {
@@ -71,7 +85,6 @@ export class SyncTreeProvider implements vscode.TreeDataProvider<SyncItem> {
                 configPaths.push(path.join(base, 'config.json'));
                 configPaths.push(path.join(base, 'Antigravity-Memory-Sync', 'config.json'));
 
-                // Search subdirectories one level deep
                 try {
                     const subdirs = fs.readdirSync(base, { withFileTypes: true })
                         .filter(d => d.isDirectory() && !d.name.startsWith('.') && d.name !== 'node_modules');

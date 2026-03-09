@@ -29,8 +29,8 @@ $ErrorActionPreference = "Stop"
 $repoDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $skillDest = Join-Path $env:USERPROFILE ".gemini\antigravity\skills\memory-sync"
 
-function Write-Ok($msg)   { Write-Host "  ✅ $msg" -ForegroundColor Green }
-function Write-Info($msg)  { Write-Host "  📂 $msg" -ForegroundColor Cyan }
+function Write-Ok($msg) { Write-Host "  ✅ $msg" -ForegroundColor Green }
+function Write-Info($msg) { Write-Host "  📂 $msg" -ForegroundColor Cyan }
 
 # ─── Uninstall ────────────────────────────────────────────────
 if ($Uninstall) {
@@ -38,7 +38,8 @@ if ($Uninstall) {
     if (Test-Path $skillDest) {
         Remove-Item -Recurse -Force $skillDest
         Write-Ok "Removed: $skillDest"
-    } else {
+    }
+    else {
         Write-Host "  Not installed." -ForegroundColor Gray
     }
     exit 0
@@ -54,13 +55,26 @@ if (-not (Test-Path $skillDest)) { New-Item -ItemType Directory -Path $skillDest
 Copy-Item -Path (Join-Path $repoDir "skill\SKILL.md") -Destination $skillDest -Force
 Write-Ok "SKILL.md → $skillDest"
 
-# 2. Scripts (setup.ps1, sync.ps1)
+# 2. Scripts (setup.ps1, sync.ps1, gdrive-api.ps1)
 $scriptsDest = Join-Path $skillDest "scripts"
 if (-not (Test-Path $scriptsDest)) { New-Item -ItemType Directory -Path $scriptsDest -Force | Out-Null }
 Copy-Item -Path (Join-Path $repoDir "scripts\setup.ps1") -Destination $scriptsDest -Force
 Copy-Item -Path (Join-Path $repoDir "scripts\sync.ps1") -Destination $scriptsDest -Force
+Copy-Item -Path (Join-Path $repoDir "scripts\gdrive-api.ps1") -Destination $scriptsDest -Force
 Copy-Item -Path (Join-Path $repoDir "config.example.json") -Destination $skillDest -Force
 Write-Ok "scripts/ → $scriptsDest"
+
+# 2b. Config files (credentials, syncignore — copy if they exist)
+$credSrc = Join-Path $repoDir "credentials.json"
+if (Test-Path $credSrc) {
+    Copy-Item -Path $credSrc -Destination $scriptsDest -Force
+    Write-Ok "credentials.json → $scriptsDest"
+}
+$syncignoreSrc = Join-Path $repoDir ".syncignore"
+if (Test-Path $syncignoreSrc) {
+    Copy-Item -Path $syncignoreSrc -Destination $skillDest -Force
+    Write-Ok ".syncignore → $skillDest"
+}
 
 # 3. Workflows (optional)
 if (-not $NoWorkflows) {

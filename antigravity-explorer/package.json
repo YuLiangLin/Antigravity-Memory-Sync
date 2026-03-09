@@ -2,8 +2,13 @@
     "name": "antigravity-explorer",
     "displayName": "%extension.displayName%",
     "description": "%extension.description%",
-    "version": "0.5.0",
+    "version": "0.17.5",
     "publisher": "NathanLin",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/YuLiangLin/Antigravity-Memory-Sync"
+    },
     "icon": "media/icon.png",
     "engines": {
         "vscode": "^1.85.0"
@@ -48,6 +53,14 @@
                 {
                     "id": "antigravity-sync",
                     "name": "%view.sync%"
+                },
+                {
+                    "id": "antigravity-projects",
+                    "name": "Projects"
+                },
+                {
+                    "id": "antigravity-agents",
+                    "name": "%view.agents%"
                 }
             ]
         },
@@ -83,6 +96,46 @@
                 "icon": "$(beaker)"
             },
             {
+                "command": "antigravity.openAgentOffice",
+                "title": "%command.openAgentOffice%",
+                "icon": "$(organization)"
+            },
+            {
+                "command": "antigravity.generateAgent",
+                "title": "%command.generateAgent%",
+                "icon": "$(sparkle)"
+            },
+            {
+                "command": "antigravity.setupSync",
+                "title": "Antigravity: Setup Sync",
+                "icon": "$(gear)"
+            },
+            {
+                "command": "antigravity.scanProjects",
+                "title": "Antigravity: Scan Projects",
+                "icon": "$(search)"
+            },
+            {
+                "command": "antigravity.setGitLabToken",
+                "title": "Antigravity: Set GitLab Token",
+                "icon": "$(key)"
+            },
+            {
+                "command": "antigravity.discoverGitLabProjects",
+                "title": "Antigravity: Discover GitLab Projects",
+                "icon": "$(cloud)"
+            },
+            {
+                "command": "antigravity.cloneProject",
+                "title": "Antigravity: Clone Project",
+                "icon": "$(cloud-download)"
+            },
+            {
+                "command": "antigravity.pullAllRepos",
+                "title": "Antigravity: Pull All Repos",
+                "icon": "$(repo-pull)"
+            },
+            {
                 "command": "antigravity.refresh",
                 "title": "%command.refresh%",
                 "icon": "$(refresh)"
@@ -109,6 +162,26 @@
                     "command": "antigravity.distillBrain",
                     "when": "view == antigravity-brain",
                     "group": "navigation"
+                },
+                {
+                    "command": "antigravity.scanProjects",
+                    "when": "view == antigravity-projects",
+                    "group": "navigation"
+                },
+                {
+                    "command": "antigravity.discoverGitLabProjects",
+                    "when": "view == antigravity-projects",
+                    "group": "navigation"
+                },
+                {
+                    "command": "antigravity.pullAllRepos",
+                    "when": "view == antigravity-projects || view == antigravity-sync",
+                    "group": "navigation"
+                },
+                {
+                    "command": "antigravity.setGitLabToken",
+                    "when": "view == antigravity-projects",
+                    "group": "2_settings"
                 }
             ]
         },
